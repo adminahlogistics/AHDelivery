@@ -32,10 +32,7 @@ export default function AdminLayout({ children }) {
     <div className="admin-shell">
       <AdminSidebar />
       <div className="admin-main">
-        <div className="bg-amber-100 px-5 py-2 text-center text-xs font-semibold tracking-wide text-amber-950">
-          LOCAL DEMO MODE — no authentication; do not expose this back office
-          publicly
-        </div>
+        
         {children}
       </div>
     </div>
