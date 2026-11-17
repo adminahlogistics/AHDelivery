@@ -5,21 +5,49 @@ import Link from "next/link";
 import Footer from "@/components/Footer";
 import LandingHeader from "@/components/LandingHeader";
 
-const DEMO_FARE_NGN = 5500;
-
 export default function PaymentPage() {
   const [reference, setReference] = useState("");
+  const [batchReference, setBatchReference] = useState("");
+  const [orderDetails, setOrderDetails] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isDemoPaymentOpen, setIsDemoPaymentOpen] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setReference(
-      new URLSearchParams(window.location.search).get("deliveryBooking") || ""
-    );
+    const search = new URLSearchParams(window.location.search);
+    const selectedBatchReference = search.get("batchReference") || "";
+    const selectedReference = search.get("deliveryBooking") || "";
+    setBatchReference(selectedBatchReference);
+    setReference(selectedReference);
     if (process.env.NODE_ENV !== "development") {
       setError("Demo payment is disabled outside local development.");
     }
+
+    if (!selectedBatchReference && !selectedReference) {
+      setIsLoading(false);
+      return;
+    }
+
+    const paymentQuery = selectedBatchReference
+      ? `batchReference=${encodeURIComponent(selectedBatchReference)}`
+      : `reference=${encodeURIComponent(selectedReference)}`;
+    fetch(`/api/delivery-bookings/payment?${paymentQuery}`)
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || "Could not load the order total.");
+        }
+        setOrderDetails(result);
+      })
+      .catch((loadError) => {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Could not load the order total."
+        );
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
   const confirmDemoPayment = async () => {
@@ -29,16 +57,19 @@ export default function PaymentPage() {
       const response = await fetch("/api/delivery-bookings/payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reference }),
+        body: JSON.stringify(
+          batchReference ? { batchReference } : { reference }
+        ),
       });
       const result = await response.json();
       if (!response.ok || !result.success) {
         throw new Error(result.message || "Unable to confirm demo payment.");
       }
 
-      window.location.assign(
-        `/delivery-payment-complete?reference=${encodeURIComponent(reference)}`
-      );
+      const confirmationUrl = batchReference
+        ? `/delivery-payment-complete?batchReference=${encodeURIComponent(batchReference)}`
+        : `/delivery-payment-complete?reference=${encodeURIComponent(reference)}`;
+      window.location.assign(confirmationUrl);
     } catch (paymentError) {
       setError(
         paymentError instanceof Error
@@ -50,6 +81,8 @@ export default function PaymentPage() {
     }
   };
 
+  const amountDueNow = orderDetails?.amountDueNow ?? 0;
+
   return (
     <>
       <LandingHeader />
@@ -60,25 +93,76 @@ export default function PaymentPage() {
         <h1 className="mt-3 text-3xl font-semibold text-gray-900">
           Confirm delivery payment
         </h1>
-        {reference ? (
+        {reference || batchReference ? (
           <>
             <p className="mt-6 text-gray-600">
-              Demo fee for request <strong>{reference}</strong>
+              Order <strong>{batchReference || reference}</strong>
             </p>
             <p className="mt-2 text-3xl font-semibold text-gray-900">
-              ₦{DEMO_FARE_NGN.toLocaleString()}
+              {isLoading ? "Loading…" : `₦${amountDueNow.toLocaleString()}`}
             </p>
-            <p className="mt-3 text-sm text-gray-500">
-              No money will be charged. This demo only marks the request as paid in the local database.
-            </p>
-            <button
-              className="mt-7 rounded-full bg-orange-600 px-6 py-3 font-semibold text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isConfirming || process.env.NODE_ENV !== "development"}
-              onClick={() => setIsDemoPaymentOpen(true)}
-              type="button"
-            >
-              Continue to demo payment
-            </button>
+            <p className="mt-2 text-sm text-gray-600">Payable now</p>
+            {orderDetails?.deliveries?.length > 0 && (
+              <div className="mt-6 rounded-xl border border-gray-200 text-left">
+                {orderDetails.deliveries.map((delivery) => (
+                  <div
+                    className="flex items-start justify-between gap-4 border-b border-gray-100 px-4 py-3 last:border-b-0"
+                    key={delivery.reference}
+                  >
+                    <span>
+                      <strong className="block text-sm text-gray-800">
+                        {delivery.recipient?.name || "Recipient"}
+                      </strong>
+                      <small className="text-gray-500">
+                        {delivery.paymentResponsibility === "recipient"
+                          ? reference
+                            ? delivery.paymentStatus === "paid"
+                              ? "Recipient payment complete"
+                              : "Recipient payment link"
+                            : "Pay on delivery"
+                          : delivery.paymentStatus === "paid"
+                            ? "Already paid"
+                            : "Pay now"}
+                      </small>
+                    </span>
+                    <strong className="whitespace-nowrap text-sm text-gray-800">
+                      ₦{delivery.amount.toLocaleString()}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            )}
+            {amountDueNow > 0 ? (
+              <>
+                <p className="mt-3 text-sm text-gray-500">
+                  No money will be charged in this local demo. Continuing marks
+                  the payment for this delivery as paid.
+                </p>
+                <button
+                  className="mt-7 rounded-full bg-orange-600 px-6 py-3 font-semibold text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={
+                    isLoading ||
+                    isConfirming ||
+                    process.env.NODE_ENV !== "development"
+                  }
+                  onClick={() => setIsDemoPaymentOpen(true)}
+                  type="button"
+                >
+                  Continue to demo payment
+                </button>
+              </>
+            ) : orderDetails && !isLoading ? (
+              <Link
+                className="mt-7 inline-block rounded-full bg-orange-600 px-6 py-3 font-semibold text-white"
+                href={
+                  batchReference
+                    ? `/delivery-payment-complete?batchReference=${encodeURIComponent(batchReference)}`
+                    : `/delivery-payment-complete?reference=${encodeURIComponent(reference)}`
+                }
+              >
+                Continue to order confirmation
+              </Link>
+            ) : null}
           </>
         ) : (
           <p className="mt-6 text-gray-600">No delivery reference was provided.</p>
@@ -109,7 +193,7 @@ export default function PaymentPage() {
               Confirm demo payment
             </h2>
             <p className="mt-4 text-gray-600">
-              {reference} · ₦{DEMO_FARE_NGN.toLocaleString()}
+              {batchReference || reference} · ₦{amountDueNow.toLocaleString()}
             </p>
             <p className="mt-3 text-sm text-gray-500">No money will be charged.</p>
             <div className="mt-6 flex flex-col gap-3">

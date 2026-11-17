@@ -37,7 +37,7 @@ export default function LandingHeader() {
           </Link>
         </nav>
         <Link className="button button-small header-cta" href="/#booking">
-          Book a delivery <FaArrowRight aria-hidden="true" />
+         Download App <FaArrowRight aria-hidden="true" />
         </Link>
         <details className="mobile-nav">
           <summary aria-label="Open navigation menu">

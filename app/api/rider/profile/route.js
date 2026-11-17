@@ -1,11 +1,19 @@
 import connectDB from "@/config/db";
 import { requireRole } from "@/lib/accessControl";
+import { RIDER_PORTAL_ENABLED } from "@/lib/riderPortal";
 import Rider from "@/models/Rider";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  if (!RIDER_PORTAL_ENABLED) {
+    return NextResponse.json(
+      { success: false, message: "The rider portal is temporarily disabled." },
+      { status: 503 }
+    );
+  }
+
   const access = await requireRole("rider");
   if (!access.authorized) return access.response;
 

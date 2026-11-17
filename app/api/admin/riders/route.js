@@ -1,5 +1,6 @@
 import connectDB from "@/config/db";
 import { requireRole } from "@/lib/accessControl";
+import { getRiderOnboardingProgress } from "@/lib/riderOnboarding";
 import Rider from "@/models/Rider";
 import { NextResponse } from "next/server";
 
@@ -48,6 +49,7 @@ export async function POST(request) {
           email: rider.email,
           phone: rider.phone,
           status: rider.status,
+          onboardingProgress: getRiderOnboardingProgress(rider),
         },
       },
       { status: 201 }
@@ -96,7 +98,9 @@ export async function PATCH(request) {
       riderId,
       { $set: { status } },
       { new: true, runValidators: true }
-    ).select("_id name email phone status");
+    ).select(
+      "_id name email phone status addressProvided proofOfAddressProvided bvnProvided ninProvided ninSlipProvided"
+    );
     if (!rider) {
       return NextResponse.json(
         { success: false, message: "The rider profile was not found." },
@@ -111,6 +115,7 @@ export async function PATCH(request) {
         email: rider.email,
         phone: rider.phone,
         status: rider.status,
+        onboardingProgress: getRiderOnboardingProgress(rider),
       },
     });
   } catch (error) {

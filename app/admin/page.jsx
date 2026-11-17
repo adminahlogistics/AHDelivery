@@ -9,17 +9,25 @@ import {
   FaTimes,
 } from "react-icons/fa";
 import Link from "next/link";
+import { DELIVERY_HUBS, getDeliveryHubLabel } from "@/config/deliveryHubs";
 
 const statusGroups = [
+  { key: "pending_payment", label: "Awaiting payment" },
   { key: "pending", label: "Pending" },
-  { key: "in_progress", label: "In-progress" },
   { key: "assigned", label: "Assigned" },
+  { key: "in_transit", label: "In transit" },
+  { key: "at_hub", label: "At hub · Awaiting final delivery" },
   { key: "completed", label: "Completed" },
+  { key: "cancelled", label: "Cancelled" },
 ];
 
 const currency = process.env.NEXT_PUBLIC_CURRENCY || "₦";
 
-const normalizeStatus = (status) => (status === "paid" ? "pending" : status);
+const normalizeStatus = (status) => {
+  if (status === "paid") return "pending";
+  if (status === "in_progress") return "in_transit";
+  return status;
+};
 
 const formatDate = (date) =>
   new Intl.DateTimeFormat("en", {
@@ -39,6 +47,9 @@ export default function AdminDashboard() {
   const [ridersError, setRidersError] = useState("");
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedRiderId, setSelectedRiderId] = useState("");
+  const [deliveryType, setDeliveryType] = useState("direct");
+  const [hubLocation, setHubLocation] = useState("yaba");
+  const [completedDistanceKm, setCompletedDistanceKm] = useState("");
   const [actionError, setActionError] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -122,7 +133,9 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (
       !selectedBookingReference ||
-      !["pending", "assigned"].includes(normalizeStatus(selectedBookingStatus))
+      !["pending", "assigned", "in_transit", "at_hub"].includes(
+        normalizeStatus(selectedBookingStatus)
+      )
     ) {
       return;
     }
@@ -142,7 +155,15 @@ export default function AdminDashboard() {
           if (status in totals) totals[status] += 1;
           return totals;
         },
-        { pending: 0, in_progress: 0, assigned: 0, completed: 0 }
+        {
+          pending_payment: 0,
+          pending: 0,
+          assigned: 0,
+          in_transit: 0,
+          at_hub: 0,
+          completed: 0,
+          cancelled: 0,
+        }
       ),
     [deliveryBookings]
   );
@@ -155,6 +176,7 @@ export default function AdminDashboard() {
         if (!search) return true;
         return [
           booking.reference,
+          booking.batchReference,
           booking.sender?.name,
           booking.sender?.phone,
           booking.recipient?.name,
@@ -164,6 +186,8 @@ export default function AdminDashboard() {
           booking.parcel?.category,
           booking.parcel?.description,
           booking.rider?.name,
+          booking.payment?.status,
+          booking.payment?.responsibility,
         ]
           .filter(Boolean)
           .some((value) => value.toLowerCase().includes(search));
@@ -171,11 +195,42 @@ export default function AdminDashboard() {
       .sort((left, right) => left.reference.localeCompare(right.reference));
   }, [activeStatus, deliveryBookings, query]);
 
+  const visibleBatchGroups = useMemo(() => {
+    const groups = new Map();
+    visibleBookings.forEach((booking) => {
+      const batchReference = booking.batchReference || booking.reference;
+      if (!groups.has(batchReference)) {
+        const allDeliveries = deliveryBookings.filter(
+          (item) => (item.batchReference || item.reference) === batchReference
+        );
+        groups.set(batchReference, {
+          reference: batchReference,
+          allDeliveries,
+          visibleDeliveries: [],
+        });
+      }
+      groups.get(batchReference).visibleDeliveries.push(booking);
+    });
+    return Array.from(groups.values());
+  }, [deliveryBookings, visibleBookings]);
+
   const activeRiders = riders.filter((rider) => rider.status === "active");
+  const routeNeedsSave =
+    selectedBooking &&
+    (deliveryType !== (selectedBooking.deliveryType || "direct") ||
+      (deliveryType === "hub" &&
+        hubLocation !== (selectedBooking.hubLocation || "")));
 
   const openBooking = (booking) => {
     setSelectedBooking(booking);
-    setSelectedRiderId(booking.rider?.userId || "");
+    setSelectedRiderId(
+      ["assigned", "in_transit"].includes(normalizeStatus(booking.status))
+        ? ""
+        : booking.rider?.userId || ""
+    );
+    setDeliveryType(booking.deliveryType || "direct");
+    setHubLocation(booking.hubLocation || "yaba");
+    setCompletedDistanceKm("");
     setActionError("");
   };
 
@@ -210,6 +265,7 @@ export default function AdminDashboard() {
       );
       setSelectedBooking(updatedBooking);
       if (action === "assign") setSelectedRiderId(result.booking.rider.userId);
+      if (action === "complete") setCompletedDistanceKm("");
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Could not update this order."
@@ -247,7 +303,7 @@ export default function AdminDashboard() {
           <p className="admin-eyebrow">OPERATIONS</p>
           <h1>Delivery orders</h1>
           <p className="admin-heading-description">
-            Review paid bookings, assign riders, and track delivery progress.
+            Review orders, assign riders, and track each delivery and payment.
           </p>
         </div>
         <label className="admin-search">
@@ -300,59 +356,143 @@ export default function AdminDashboard() {
             {bookingsError}
           </p>
         ) : visibleBookings.length ? (
-          <div className="admin-order-grid">
-            {visibleBookings.map((booking) => (
-              <button
-                className="admin-order-card admin-order-card-button"
-                key={booking.reference}
-                onClick={() => openBooking(booking)}
-                type="button"
-              >
-                <span className="admin-order-card-top">
-                  <span className={`order-status order-status-${normalizeStatus(booking.status)}`}>
-                    <span />
-                    {statusGroups.find(
-                      (group) => group.key === normalizeStatus(booking.status)
-                    )?.label || booking.status}
-                  </span>
-                  <span className="admin-order-date">
-                    {formatDate(booking.createdAt)}
-                  </span>
-                </span>
-                <span className="admin-booking-route">
-                  <span>
-                    <small>Pickup</small>
-                    {booking.pickup?.address}
-                  </span>
-                  <FaArrowRight aria-hidden="true" />
-                  <span>
-                    <small>Delivery</small>
-                    {booking.delivery?.address}
-                  </span>
-                </span>
-                <span className="admin-order-details">
-                  <span className="admin-customer">
-                    <span className="admin-customer-avatar" aria-hidden="true">
-                      {(booking.sender?.name || "C").charAt(0)}
+        <div className="admin-batch-list">
+          {visibleBatchGroups.map((group) => {
+            const totalFees = group.allDeliveries.reduce(
+              (total, booking) => total + (booking.quote?.amount || 0),
+              0
+            );
+            const amountPaid = group.allDeliveries
+              .filter((booking) =>
+                ["paid", "collected"].includes(booking.payment?.status)
+              )
+              .reduce(
+                (total, booking) => total + (booking.quote?.amount || 0),
+                0
+              );
+            const awaitingPayment = group.allDeliveries
+              .filter((booking) => booking.payment?.status === "pending")
+              .reduce(
+                (total, booking) => total + (booking.quote?.amount || 0),
+                0
+              );
+            const dueOnDelivery = group.allDeliveries
+              .filter((booking) => booking.payment?.status === "due_on_delivery")
+              .reduce(
+                (total, booking) => total + (booking.quote?.amount || 0),
+                0
+              );
+
+            return (
+              <section className="admin-batch-group" key={group.reference}>
+                <header className="admin-batch-heading">
+                  <div>
+                    <p className="admin-eyebrow">ORDER GROUP</p>
+                    <h3>{group.reference}</h3>
+                    <small>
+                      Showing {group.visibleDeliveries.length} of{" "}
+                      {group.allDeliveries.length} deliveries
+                    </small>
+                  </div>
+                  <div className="admin-batch-totals">
+                    <span>
+                      Total <strong>{currency}{totalFees.toLocaleString()}</strong>
                     </span>
                     <span>
-                      <small>{booking.reference}</small>
-                      <strong>{booking.sender?.name}</strong>
+                      Paid <strong>{currency}{amountPaid.toLocaleString()}</strong>
                     </span>
-                  </span>
-                  <span className="admin-order-total">
-                    {currency}
-                    {booking.quote?.amount?.toLocaleString()}
-                  </span>
-                </span>
-                <span className="admin-order-items">
-                  {booking.parcel?.category ||
-                    booking.parcel?.description ||
-                    "Parcel"}
-                  {booking.rider?.name ? ` · Rider: ${booking.rider.name}` : ""}
-                </span>
-              </button>
-            ))}
+                    <span>
+                      Awaiting payment <strong>{currency}{awaitingPayment.toLocaleString()}</strong>
+                    </span>
+                    <span>
+                      POD due <strong>{currency}{dueOnDelivery.toLocaleString()}</strong>
+                    </span>
+                  </div>
+                </header>
+                <div className="admin-order-grid">
+                  {group.visibleDeliveries.map((booking) => {
+                    const paymentStatus = booking.payment?.status || "not_started";
+                    const paymentStatusLabel =
+                      paymentStatus === "paid"
+                        ? "Paid"
+                        : paymentStatus === "collected"
+                          ? "Collected by rider"
+                          : paymentStatus === "due_on_delivery"
+                            ? "Due on delivery"
+                            : paymentStatus === "pending"
+                              ? "Awaiting payment"
+                              : paymentStatus.replaceAll("_", " ");
+                    return (
+                      <button
+                        className="admin-order-card admin-order-card-button"
+                        key={booking.reference}
+                        onClick={() => openBooking(booking)}
+                        type="button"
+                      >
+                      <span className="admin-order-card-top">
+                        <span className={`order-status order-status-${normalizeStatus(booking.status)}`}>
+                          <span />
+                          {statusGroups.find(
+                            (group) => group.key === normalizeStatus(booking.status)
+                          )?.label || booking.status}
+                        </span>
+                        <span className="admin-order-date">
+                          {formatDate(booking.createdAt)}
+                        </span>
+                      </span>
+                      <span className="admin-booking-route">
+                        <span>
+                          <small>Pickup</small>
+                          {booking.pickup?.address}
+                        </span>
+                        <FaArrowRight aria-hidden="true" />
+                        <span>
+                          <small>Delivery</small>
+                          {booking.delivery?.address}
+                        </span>
+                      </span>
+                      <span className="admin-order-details">
+                        <span className="admin-customer">
+                          <span className="admin-customer-avatar" aria-hidden="true">
+                            {(booking.sender?.name || "C").charAt(0)}
+                          </span>
+                          <span>
+                            <small>{booking.reference}</small>
+                            <strong>{booking.sender?.name}</strong>
+                          </span>
+                        </span>
+                        <span className="admin-order-total">
+                          {currency}
+                          {booking.quote?.amount?.toLocaleString()}
+                        </span>
+                      </span>
+                      <span className="admin-order-items">
+                        {booking.parcel?.category ||
+                          booking.parcel?.description ||
+                          "Parcel"}
+                        {booking.batchSize > 1
+                          ? ` · Delivery ${(booking.batchIndex || 0) + 1} of ${booking.batchSize}`
+                          : ""}
+                        {booking.deliveryType === "hub"
+                          ? ` · ${getDeliveryHubLabel(booking.hubLocation) || "Hub sorting"}`
+                          : " · Direct delivery"}
+                        {booking.rider?.name ? ` · Rider: ${booking.rider.name}` : ""}
+                        <span
+                          className={`admin-payment-status admin-payment-status-${paymentStatus}`}
+                        >
+                          {booking.payment?.responsibility === "recipient"
+                            ? "Recipient"
+                            : "Sender"}{" "}
+                          · {paymentStatusLabel}
+                        </span>
+                      </span>
+                      </button>
+                    );
+                  })}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         ) : (
           !bookingsLoading && (
@@ -446,14 +586,46 @@ export default function AdminDashboard() {
                       : "Send"}{" "}
                     · {selectedBooking.vehicleType || "Motorbike"}
                   </p>
+                  <small>
+                    Route:{" "}
+                    {selectedBooking.deliveryType === "hub"
+                      ? "Bring to hub"
+                      : "Direct delivery"}
+                    {selectedBooking.currentLeg === "to_hub"
+                      ? " · First leg to hub"
+                      : selectedBooking.currentLeg === "final_delivery"
+                        ? " · Final delivery leg"
+                        : ""}
+                  </small>
+                  {selectedBooking.deliveryType === "hub" && (
+                    <p>
+                      <strong>Hub:</strong>{" "}
+                      {getDeliveryHubLabel(selectedBooking.hubLocation) ||
+                        selectedBooking.hubAddress}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <h3>Payment</h3>
                   <p>
                     {currency}
                     {selectedBooking.quote?.amount?.toLocaleString()} ·{" "}
-                    {selectedBooking.payment?.status}
+                    {selectedBooking.payment?.responsibility === "recipient"
+                      ? "Recipient pays"
+                      : "Sender pays"}
                   </p>
+                  <small>
+                    Payment status:{" "}
+                    {selectedBooking.payment?.status === "paid"
+                      ? "Paid"
+                      : selectedBooking.payment?.status === "pending"
+                        ? "Awaiting payment"
+                        : selectedBooking.payment?.status === "due_on_delivery"
+                          ? "Due on delivery"
+                          : selectedBooking.payment?.status === "collected"
+                            ? "Collected by rider"
+                            : selectedBooking.payment?.status}
+                  </small>
                   <small>
                     Parcel requirements accepted:{" "}
                     {selectedBooking.parcel?.acceptedParcelRequirements
@@ -474,12 +646,28 @@ export default function AdminDashboard() {
                   )}
                 </div>
               )}
+              {selectedBooking.riderAssignmentHistory?.length > 1 && (
+                <div className="admin-assigned-rider">
+                  <h3>Assignment history</h3>
+                  {selectedBooking.riderAssignmentHistory.map((assignment, index) => (
+                    <p key={`${assignment.userId}-${assignment.assignedAt}-${index}`}>
+                      {assignment.name} ·{" "}
+                      {assignment.leg === "to_hub"
+                        ? "Hub leg"
+                        : assignment.leg === "final_delivery"
+                          ? "Final delivery"
+                          : "Direct delivery"}{" "}
+                      · {formatDate(assignment.assignedAt)}
+                    </p>
+                  ))}
+                </div>
+              )}
 
               {actionError && (
                 <p className="admin-booking-error" role="alert">{actionError}</p>
               )}
               {ridersError &&
-                ["pending", "assigned"].includes(
+                ["pending", "assigned", "in_transit", "at_hub"].includes(
                   normalizeStatus(selectedBooking.status)
                 ) && (
                   <p className="admin-booking-error" role="alert">
@@ -488,12 +676,62 @@ export default function AdminDashboard() {
                 )}
 
               <div className="admin-booking-actions">
-                {["pending", "assigned"].includes(
+                {normalizeStatus(selectedBooking.status) === "pending" && (
+                  <>
+                    <label className="admin-route-type-field">
+                      Delivery route
+                      <select
+                        disabled={isUpdating}
+                        onChange={(event) => setDeliveryType(event.target.value)}
+                        value={deliveryType}
+                      >
+                        <option value="direct">Direct to recipient</option>
+                        <option value="hub">Bring to hub for sorting</option>
+                      </select>
+                    </label>
+                    {deliveryType === "hub" && (
+                      <label className="admin-route-type-field admin-hub-location-field">
+                        Hub location
+                        <select
+                          disabled={isUpdating}
+                          onChange={(event) => setHubLocation(event.target.value)}
+                          value={hubLocation}
+                        >
+                          {DELIVERY_HUBS.map((hub) => (
+                            <option key={hub.value} value={hub.value}>
+                              {hub.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <button
+                      className="admin-action-button admin-secondary-action"
+                      disabled={isUpdating}
+                      onClick={() =>
+                        updateBooking("set_delivery_type", {
+                          deliveryType,
+                          hubLocation,
+                        })
+                      }
+                      type="button"
+                    >
+                      {isUpdating ? "Saving…" : "Save delivery route"}
+                    </button>
+                  </>
+                )}
+                {["pending", "assigned", "in_transit", "at_hub"].includes(
                   normalizeStatus(selectedBooking.status)
                 ) && (
                   <>
                     <label>
-                      Rider
+                      {normalizeStatus(selectedBooking.status) === "at_hub"
+                        ? "Final-delivery rider"
+                        : selectedBooking.status === "in_transit"
+                          ? "Reassign to rider"
+                          : selectedBooking.status === "assigned"
+                            ? "Reassign rider"
+                            : "Rider"}
                       <select
                         disabled={isUpdating || ridersLoading || activeRiders.length === 0}
                         onChange={(event) => setSelectedRiderId(event.target.value)}
@@ -517,17 +755,30 @@ export default function AdminDashboard() {
                     )}
                     <button
                       className="admin-action-button"
-                      disabled={isUpdating || !selectedRiderId}
+                      disabled={
+                        isUpdating ||
+                        !selectedRiderId ||
+                        (normalizeStatus(selectedBooking.status) === "pending" &&
+                          routeNeedsSave)
+                      }
                       onClick={() =>
                         updateBooking("assign", { riderId: selectedRiderId })
                       }
                       type="button"
                     >
-                      {isUpdating ? "Saving…" : "Assign rider"}
+                      {isUpdating
+                        ? "Saving…"
+                        : normalizeStatus(selectedBooking.status) === "at_hub"
+                          ? "Assign final delivery"
+                          : ["assigned", "in_transit"].includes(
+                              normalizeStatus(selectedBooking.status)
+                            )
+                            ? "Reassign rider"
+                            : "Assign rider"}
                     </button>
                   </>
                 )}
-                {selectedBooking.status === "assigned" && (
+                {normalizeStatus(selectedBooking.status) === "assigned" && (
                   <button
                     className="admin-action-button"
                     disabled={isUpdating}
@@ -537,15 +788,54 @@ export default function AdminDashboard() {
                     Start ride
                   </button>
                 )}
-                {selectedBooking.status === "in_progress" && (
-                  <button
-                    className="admin-action-button"
-                    disabled={isUpdating}
-                    onClick={() => updateBooking("complete")}
-                    type="button"
-                  >
-                    Mark completed
-                  </button>
+                {normalizeStatus(selectedBooking.status) === "in_transit" &&
+                  selectedBooking.currentLeg === "to_hub" && (
+                    <button
+                      className="admin-action-button"
+                      disabled={isUpdating}
+                      onClick={() => updateBooking("arrive_hub")}
+                      type="button"
+                    >
+                      Confirm received at hub
+                    </button>
+                  )}
+                {normalizeStatus(selectedBooking.status) === "in_transit" &&
+                  selectedBooking.currentLeg !== "to_hub" && (
+                  <>
+                    <label className="admin-route-type-field admin-distance-field">
+                      Trip distance (km)
+                      <input
+                        disabled={isUpdating}
+                        max="1000"
+                        min="0"
+                        onChange={(event) =>
+                          setCompletedDistanceKm(event.target.value)
+                        }
+                        placeholder="e.g. 8.5"
+                        step="0.1"
+                        type="number"
+                        value={completedDistanceKm}
+                      />
+                    </label>
+                    <button
+                      className="admin-action-button"
+                      disabled={
+                        isUpdating ||
+                        completedDistanceKm === "" ||
+                        !Number.isFinite(Number(completedDistanceKm)) ||
+                        Number(completedDistanceKm) < 0 ||
+                        Number(completedDistanceKm) > 1000
+                      }
+                      onClick={() =>
+                        updateBooking("complete", {
+                          distanceKm: Number(completedDistanceKm),
+                        })
+                      }
+                      type="button"
+                    >
+                      {isUpdating ? "Saving…" : "Record distance & mark completed"}
+                    </button>
+                  </>
                 )}
               </div>
             </div>

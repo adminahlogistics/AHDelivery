@@ -2,15 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { FaUserPlus } from "react-icons/fa";
+import RiderOnboardingWizard from "@/components/admin/RiderOnboardingWizard";
 
 export default function AdminRidersPage() {
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
-  const [formError, setFormError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", phone: "" });
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardRiderId, setWizardRiderId] = useState("");
 
   const loadRiders = useCallback(async () => {
     setLoading(true);
@@ -37,35 +36,18 @@ export default function AdminRidersPage() {
     loadRiders();
   }, [loadRiders]);
 
-  const submitRider = async (event) => {
-    event.preventDefault();
-    setFormError("");
-    setSuccess("");
-    setIsSubmitting(true);
-
-    try {
-      const response = await fetch("/api/admin/riders", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(form),
-      });
-      const result = await response.json();
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Could not create this rider profile.");
+  const updateSavedRider = (updatedRider) => {
+    setRiders((current) => {
+      const exists = current.some((rider) => rider.id === updatedRider.id);
+      if (exists) {
+        return current.map((rider) =>
+          rider.id === updatedRider.id ? { ...rider, ...updatedRider } : rider
+        );
       }
-
-      setSuccess(`Rider profile created for ${result.rider.name}. No email was sent.`);
-      setForm({ name: "", email: "", phone: "" });
-      await loadRiders();
-    } catch (error) {
-      setFormError(
-        error instanceof Error ? error.message : "Could not create this rider profile."
+      return [...current, updatedRider].sort((a, b) =>
+        a.name.localeCompare(b.name)
       );
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   };
 
   return (
@@ -83,65 +65,33 @@ export default function AdminRidersPage() {
           <p className="admin-eyebrow">PEOPLE</p>
           <h1>Riders</h1>
           <p className="admin-heading-description">
-            Create operational rider profiles for local delivery assignments.
+            Manage your riders and track onboarding progress.
           </p>
         </div>
+        <button
+          className="admin-action-button rider-onboard-trigger"
+          onClick={() => {
+            setWizardRiderId("");
+            setWizardOpen(true);
+          }}
+          type="button"
+        >
+          <FaUserPlus aria-hidden="true" />
+          Onboard a rider
+        </button>
       </section>
 
-      <section className="rider-onboard-card" aria-labelledby="rider-onboard-title">
-        <div className="rider-onboard-heading">
-          <span className="rider-onboard-icon"><FaUserPlus aria-hidden="true" /></span>
-          <div>
-            <h2 id="rider-onboard-title">Onboard a rider</h2>
-            <p>Creates a MongoDB rider profile only; no sign-in or email invitation is provided.</p>
-          </div>
-        </div>
-        <form className="rider-onboard-form" onSubmit={submitRider}>
-          <label>
-            Full name
-            <input
-              autoComplete="name"
-              maxLength={100}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, name: event.target.value }))
-              }
-              required
-              value={form.name}
-            />
-          </label>
-          <label>
-            Email address
-            <input
-              autoComplete="email"
-              maxLength={254}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, email: event.target.value }))
-              }
-              required
-              type="email"
-              value={form.email}
-            />
-          </label>
-          <label>
-            Phone number
-            <input
-              autoComplete="tel"
-              maxLength={30}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, phone: event.target.value }))
-              }
-              required
-              type="tel"
-              value={form.phone}
-            />
-          </label>
-          {formError && <p className="rider-form-message rider-form-error" role="alert">{formError}</p>}
-          {success && <p className="rider-form-message rider-form-success" role="status">{success}</p>}
-          <button className="admin-action-button" disabled={isSubmitting} type="submit">
-            {isSubmitting ? "Creating profile…" : "Create rider profile"}
-          </button>
-        </form>
-      </section>
+      {wizardOpen && (
+        <RiderOnboardingWizard
+          key={wizardRiderId || "new"}
+          onClose={() => {
+            setWizardOpen(false);
+            setWizardRiderId("");
+          }}
+          onSaved={updateSavedRider}
+          riderId={wizardRiderId}
+        />
+      )}
 
       <section className="admin-orders-section" aria-labelledby="rider-list-title">
         <div className="admin-orders-heading">
@@ -150,7 +100,7 @@ export default function AdminRidersPage() {
             <p>
               {loading
                 ? "Loading rider profiles…"
-                : `${riders.filter((rider) => rider.status === "active").length} active · ${riders.filter((rider) => rider.status === "inactive").length} inactive`}
+                : `${riders.length} riders · ${riders.filter((rider) => rider.status === "active").length} active · ${riders.filter((rider) => rider.status === "inactive").length} inactive`}
             </p>
           </div>
         </div>
@@ -166,6 +116,22 @@ export default function AdminRidersPage() {
                 <div className="rider-list-details">
                   <strong>{rider.name}</strong>
                   <span>{rider.email}</span>
+                  <div className="rider-progress">
+                    <div className="rider-progress-label">
+                      <span>Onboarding</span>
+                      <strong>{rider.onboardingProgress}%</strong>
+                    </div>
+                    <div
+                      aria-label={`Onboarding ${rider.onboardingProgress}% complete`}
+                      aria-valuemax={100}
+                      aria-valuemin={0}
+                      aria-valuenow={rider.onboardingProgress}
+                      className="rider-progress-track"
+                      role="progressbar"
+                    >
+                      <span style={{ width: `${rider.onboardingProgress}%` }} />
+                    </div>
+                  </div>
                 </div>
                 <span className="rider-list-phone">
                   {rider.phone || "No phone"}
@@ -174,7 +140,17 @@ export default function AdminRidersPage() {
                   {rider.status === "active" ? "Active" : "Inactive"}
                 </span>
                 <button
-                  className="rider-portal-link"
+                  className="rider-list-action"
+                  onClick={() => {
+                    setWizardRiderId(rider.id);
+                    setWizardOpen(true);
+                  }}
+                  type="button"
+                >
+                  {rider.onboardingProgress < 100 ? "Continue onboarding" : "Edit profile"}
+                </button>
+                <button
+                  className="rider-list-action rider-list-status-action"
                   disabled={loading}
                   onClick={async () => {
                     setLoadingError("");
@@ -208,7 +184,7 @@ export default function AdminRidersPage() {
             ))}
           </div>
         ) : (
-          !loading && <p className="admin-booking-empty">No riders yet. Invite your first rider above.</p>
+          !loading && <p className="admin-booking-empty">No riders yet. Use “Onboard a rider” to add your first rider.</p>
         )}
       </section>
     </main>

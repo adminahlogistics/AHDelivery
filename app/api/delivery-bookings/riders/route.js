@@ -1,5 +1,6 @@
 import connectDB from "@/config/db";
 import { requireRole } from "@/lib/accessControl";
+import { getRiderOnboardingProgress } from "@/lib/riderOnboarding";
 import Rider from "@/models/Rider";
 import { NextResponse } from "next/server";
 
@@ -12,18 +13,21 @@ export async function GET() {
   try {
     await connectDB();
     const riders = await Rider.find({})
-      .select("_id name email phone status")
+      .select(
+        "_id name email phone status addressProvided proofOfAddressProvided bvnProvided ninProvided ninSlipProvided"
+      )
       .sort({ name: 1 })
       .lean();
 
     return NextResponse.json({
       success: true,
-      riders: riders.map(({ _id, name, email, phone, status }) => ({
-        id: String(_id),
-        name,
-        email,
-        phone,
-        status,
+      riders: riders.map((rider) => ({
+        id: String(rider._id),
+        name: rider.name,
+        email: rider.email,
+        phone: rider.phone,
+        status: rider.status,
+        onboardingProgress: getRiderOnboardingProgress(rider),
       })),
     });
   } catch (error) {

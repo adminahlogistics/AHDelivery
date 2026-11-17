@@ -1,0 +1,254 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "AH Delivery production build",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Temporary inspect Git status",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Temporary inspect Git changes",
+			"type": "shell",
+			"command": "cmd.exe",
+			"args": [
+				"/c",
+				"git remote -v && git diff --stat && git diff --name-status"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Temporary inspect Git remote",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"remote",
+				"-v"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Temporary inspect Git diff summary",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"diff",
+				"--stat"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Update delivery package lock",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"install",
+				"--package-lock-only",
+				"--ignore-scripts"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Temporary final Git status",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Stage AH Delivery work safely",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"rm",
+				"--cached",
+				"--",
+				".env.local"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Stage source excluding local files",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				"-A",
+				"--",
+				".",
+				":(exclude).vscode"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Stage application source",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				"-A",
+				"--",
+				"app",
+				"components",
+				"config",
+				"context",
+				"lib",
+				"models",
+				".gitignore",
+				"README.md",
+				"jsconfig.json",
+				"package.json",
+				"package-lock.json",
+				"next.config.mjs",
+				"middleware.ts"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Review staged files",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check staged change summary",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"diff",
+				"--cached",
+				"--stat"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Prepare clean initial snapshot",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"write-tree"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Create AH Delivery initial commit",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"commit-tree",
+				"d3b9a2f7e90bea206963cde8e1a5747bd8263ace",
+				"-m",
+				"Rebuild AH Parcel Delivery app",
+				"-m",
+				"Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Point origin to AHDelivery",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"remote",
+				"set-url",
+				"origin",
+				"https://github.com/adminahlogistics/AHDelivery.git"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Set clean local main commit",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"update-ref",
+				"refs/heads/main",
+				"cf75f77c5427f1d27a612761e87072cc2ad7bf47"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Push AHDelivery main branch",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"push",
+				"--set-upstream",
+				"origin",
+				"main"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Verify saved local commit",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Clear stale branch tracking",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"branch",
+				"--unset-upstream",
+				"main"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Final Git status verification",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Run lint",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint - stylish"
+			]
+		}
+	]
+}
